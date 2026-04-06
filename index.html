@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Netflix Audit Pro 2026 | Sincronización Total</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        :root { --n-red: #E50914; --bg: #000; --card: #0a0a0a; --border: #1a1a1a; --text: #fff; --yellow: #D4AF37; }
+        * { box-sizing: border-box; }
+        body, html { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; }
+
+        @media (min-width: 1024px) {
+            body { height: 100vh; overflow: hidden; }
+            .container { height: 100vh; display: flex; flex-direction: column; padding: 20px; gap: 15px; }
+            .main-grid { display: grid; grid-template-columns: 1fr 340px; gap: 20px; flex: 1; min-height: 0; }
+            .charts-left { display: grid; grid-template-rows: 1.2fr 1fr; gap: 15px; min-height: 0; }
+            .charts-bottom-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; min-height: 0; }
+        }
+
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--n-red); padding-bottom: 10px; }
+        .logo { color: var(--n-red); font-weight: 900; font-size: 1.6rem; letter-spacing: -1.5px; }
+        .toolbar { display: flex; gap: 10px; align-items: center; }
+        input[type="date"] { background: #222; border: 1px solid #444; color: #fff; padding: 5px; border-radius: 4px; color-scheme: dark; }
+        input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
+        .btn-pdf { background: var(--n-red); color: #fff; border: none; padding: 6px 18px; border-radius: 4px; cursor: pointer; font-weight: 900; }
+
+        .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
+        .metric-card { background: var(--card); border: 1px solid var(--border); padding: 15px; border-radius: 8px; text-align: center; }
+        .metric-card h4 { margin: 0; font-size: 0.65rem; color: #aaa; text-transform: uppercase; }
+        .metric-card .val { font-size: 2.2rem; font-weight: 900; display: block; margin: 4px 0; color: #fff; }
+        .metric-card .sub { font-size: 0.6rem; color: var(--n-red); font-weight: 800; }
+
+        .chart-box { background: var(--card); border: 1px solid var(--border); padding: 12px; border-radius: 8px; display: flex; flex-direction: column; }
+        .chart-box h2 { font-size: 0.75rem; margin: 0 0 10px 0; color: #fff; text-transform: uppercase; border-left: 3px solid var(--n-red); padding-left: 8px; }
+        .canvas-container { flex: 1; position: relative; min-height: 180px; }
+
+        .top-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; color: #eee; }
+        .top-table td { padding: 8px 0; border-bottom: 1px solid #1a1a1a; }
+        .hours-label { text-align: right; font-weight: 900; color: var(--n-red); font-size: 1.1rem; }
+    </style>
+</head>
+<body>
+
+<div class="container" id="dashboard-content">
+    <header>
+        <div class="logo">NETFLIX AUDIT PRO</div>
+        <div class="toolbar no-print">
+            <input type="date" id="start">
+            <input type="date" id="end">
+            <button class="btn-pdf" onclick="generatePDF()">PDF REPORTE</button>
+        </div>
+    </header>
+
+    <div class="metrics-grid">
+        <div class="metric-card"><h4>Media Diaria</h4><span class="val" id="m-daily">0.0h</span><span class="sub">TIEMPO PERDIDO</span></div>
+        <div class="metric-card"><h4>Media Semanal</h4><span class="val" id="m-weekly">0.0h</span><span class="sub">VOLUMEN SEMANAL</span></div>
+        <div class="metric-card"><h4>Total Periodo</h4><span class="val" id="m-total">0.0h</span><span class="sub">HORAS ACUMULADAS</span></div>
+        <div class="metric-card"><h4>Días Críticos</h4><span class="val" id="m-crit" style="color:var(--n-red)">0</span><span class="sub">> 5 HORAS</span></div>
+    </div>
+
+    <div class="main-grid">
+        <div class="charts-left">
+            <div class="chart-box">
+                <h2 id="timeline-title">Cálculo de Visualizaciones por Horas</h2>
+                <div class="canvas-container"><canvas id="mainChart"></canvas></div>
+            </div>
+            
+            <div class="charts-bottom-row">
+                <div class="chart-box"><h2>Impacto Serie (Horas Rango)</h2><div class="canvas-container"><canvas id="seriesChart"></canvas></div></div>
+                <div class="chart-box"><h2>Balance Semanal</h2><div class="canvas-container"><canvas id="balanceChart"></canvas></div></div>
+                <div class="chart-box"><h2>Media vs 40h Trabajo</h2><div class="canvas-container"><canvas id="avgVsWorkChart"></canvas></div></div>
+            </div>
+        </div>
+        <aside class="chart-box">
+            <h2>Récords Máximos</h2>
+            <table class="top-table" id="we-table"></table>
+            <div style="height:15px"></div>
+            <table class="top-table" id="wd-table"></table>
+        </aside>
+    </div>
+</div>
+
+<script>
+    const shortDays = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    const longDays = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const shortMonths = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    
+    // Base de datos completa con distribución por serie
+    const masterData = [
+        { d: '2026-02-01', h: 5.73, s: {'The Rookie': 5.73} }, 
+        { d: '2026-02-02', h: 8.6, s: {'The Rookie': 4.0, 'El Mentalista': 4.6} },
+        { d: '2026-02-03', h: 5.73, s: {'El Mentalista': 5.73} },
+        { d: '2026-02-04', h: 8.02, s: {'The Rookie': 8.02} },
+        { d: '2026-02-05', h: 7.88, s: {'The Rookie': 7.88} },
+        { d: '2026-02-06', h: 6.45, s: {'The Rookie': 6.45} },
+        { d: '2026-02-07', h: 10.75, s: {'The Rookie': 10.75} },
+        { d: '2026-02-08', h: 12.9, s: {'The Rookie': 12.9} },
+        { d: '2026-02-09', h: 7.16, s: {'The Rookie': 7.16} },
+        { d: '2026-02-10', h: 2.86, s: {'The Rookie': 2.86} },
+        { d: '2026-02-17', h: 0.71, s: {'El Mentalista': 0.71} },
+        { d: '2026-02-22', h: 2.86, s: {'Crónicas Vampíricas': 2.86} },
+        { d: '2026-02-23', h: 5.73, s: {'Crónicas Vampíricas': 5.73} },
+        { d: '2026-02-24', h: 0.71, s: {'Crónicas Vampíricas': 0.71} },
+        { d: '2026-02-25', h: 5.83, s: {'The Rookie': 5.83} },
+        { d: '2026-02-27', h: 3.5, s: {'The Rookie': 3.5} },
+        { d: '2026-02-28', h: 12.0, s: {'The Rookie': 12.0} },
+        { d: '2026-03-01', h: 7.0, s: {'The Rookie': 7.0} },
+        { d: '2026-03-03', h: 2.86, s: {'El Mentalista': 2.86} },
+        { d: '2026-03-04', h: 9.31, s: {'El Mentalista': 9.31} },
+        { d: '2026-03-05', h: 3.58, s: {'El Mentalista': 3.58} },
+        { d: '2026-03-06', h: 5.01, s: {'El Mentalista': 5.01} },
+        { d: '2026-03-07', h: 10.6, s: {'El Mentalista': 10.6} },
+        { d: '2026-03-08', h: 5.6, s: {'El Mentalista': 5.6} },
+        { d: '2026-03-09', h: 5.6, s: {'El Mentalista': 5.6} },
+        { d: '2026-03-10', h: 4.2, s: {'El Mentalista': 4.2} },
+        { d: '2026-03-11', h: 5.0, s: {'Crónicas Vampíricas': 5.0} },
+        { d: '2026-03-12', h: 1.43, s: {'Crónicas Vampíricas': 1.43} },
+        { d: '2026-03-13', h: 5.73, s: {'Crónicas Vampíricas': 5.73} },
+        { d: '2026-03-14', h: 3.58, s: {'Crónicas Vampíricas': 3.58} },
+        { d: '2026-03-15', h: 0.71, s: {'Crónicas Vampíricas': 0.71} },
+        { d: '2026-03-18', h: 7.16, s: {'Crónicas Vampíricas': 7.16} },
+        { d: '2026-03-19', h: 0.71, s: {'Crónicas Vampíricas': 0.71} },
+        { d: '2026-03-22', h: 13.5, s: {'Crónicas Vampíricas': 13.5} },
+        { d: '2026-03-23', h: 2.86, s: {'Crónicas Vampíricas': 2.86} },
+        { d: '2026-03-24', h: 10.75, s: {'Crónicas Vampíricas': 10.75} },
+        { d: '2026-03-25', h: 5.01, s: {'Crónicas Vampíricas': 5.01} },
+        { d: '2026-03-26', h: 11.2, s: {'Crónicas Vampíricas': 11.2} },
+        { d: '2026-03-27', h: 5.73, s: {'Agente Nocturno': 5.73} },
+        { d: '2026-03-28', h: 7.88, s: {'Agente Nocturno': 7.88} },
+        { d: '2026-03-29', h: 16.48, s: {'Agente Nocturno': 16.48} },
+        { d: '2026-03-30', h: 1.43, s: {'Agente Nocturno': 1.43} },
+        { d: '2026-03-31', h: 2.15, s: {'Agente Nocturno': 2.15} },
+        { d: '2026-04-01', h: 4.29, s: {'Agente Nocturno': 4.29} },
+        { d: '2026-04-02', h: 5.59, s: {'Girlboss': 5.59} },
+        { d: '2026-04-03', h: 8.6, s: {'The Rookie': 8.6} },
+        { d: '2026-04-04', h: 5.73, s: {'The Rookie': 5.73} },
+        { d: '2026-04-05', h: 6.45, s: {'The Rookie': 6.45} }
+    ];
+
+    let mainChart, seriesChart, balanceChart, avgVsWorkChart;
+
+    function fmt(date) {
+        return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+    }
+
+    const targetLinePlugin = {
+        id: 'targetLine',
+        beforeDraw(chart) {
+            if (chart.canvas.id !== 'balanceChart' && chart.canvas.id !== 'avgVsWorkChart') return;
+            const { ctx, chartArea: { left, right }, scales: { y } } = chart;
+            const yPos = y.getPixelForValue(40);
+            ctx.save(); ctx.beginPath(); ctx.setLineDash([8, 6]); ctx.lineWidth = 3;
+            ctx.strokeStyle = '#D4AF37'; ctx.moveTo(left, yPos); ctx.lineTo(right, yPos); ctx.stroke();
+            ctx.fillStyle = '#D4AF37'; ctx.font = 'bold 10px sans-serif';
+            ctx.fillText('40h', left + 5, yPos - 8); ctx.restore();
+        }
+    };
+
+    function updateDashboard() {
+        const start = document.getElementById('start').value;
+        const end = document.getElementById('end').value;
+        if(!start || !end) return;
+
+        const filtered = masterData.filter(i => i.d >= start && i.d <= end);
+        const dStart = new Date(start + 'T00:00:00');
+        const dEnd = new Date(end + 'T00:00:00');
+        const daysCount = Math.round((dEnd - dStart) / 86400000) + 1;
+        
+        let totalH = 0, crit = 0; 
+        const seriesTotal = {};
+
+        filtered.forEach(i => { 
+            totalH += i.h; 
+            if (i.h > 5) crit++; 
+            // Sumar horas por serie en este rango
+            for(const [sName, sHours] of Object.entries(i.s)) {
+                seriesTotal[sName] = (seriesTotal[sName] || 0) + sHours;
+            }
+        });
+
+        const globalWeeklyAvg = (totalH / daysCount) * 7;
+        document.getElementById('m-daily').innerText = (totalH / daysCount).toFixed(1) + "h";
+        document.getElementById('m-weekly').innerText = globalWeeklyAvg.toFixed(1) + "h";
+        document.getElementById('m-total').innerText = totalH.toFixed(1) + "h";
+        document.getElementById('m-crit').innerText = crit;
+
+        // Tablas
+        const fillTable = (id, data) => {
+            document.getElementById(id).innerHTML = data.sort((a,b)=>b.h-a.h).slice(0,5).map(i => `
+            <tr><td><span style="font-size:0.6rem;color:#666;display:block">${longDays[new Date(i.d+'T00:00:00').getDay()]}</span>${i.d.split('-').reverse().slice(0,2).join('/')}</td>
+            <td class="hours-label">${i.h.toFixed(1)}h</td></tr>`).join('');
+        };
+        fillTable('we-table', filtered.filter(i=>{const d=new Date(i.d+'T00:00:00').getDay(); return d==0||d==6;}));
+        fillTable('wd-table', filtered.filter(i=>{const d=new Date(i.d+'T00:00:00').getDay(); return d!=0&&d!=6;}));
+
+        // Chart 1: Timeline
+        const timelineDates = [];
+        let cur = new Date(dStart);
+        while (cur <= dEnd) { timelineDates.push(fmt(cur)); cur.setDate(cur.getDate() + 1); }
+
+        if (mainChart) {
+            const hData = timelineDates.map(dt => { const e = masterData.find(x => x.d === dt); return e ? e.h : 0; });
+            const weeklySumLine = hData.map((_, i, arr) => {
+                const s = Math.max(0, i - 3); const e = Math.min(arr.length, i + 4);
+                const sub = arr.slice(s, e);
+                return (sub.reduce((a, b) => a + b, 0) / sub.length) * 7;
+            });
+            mainChart.data.labels = timelineDates.map(dt => { const o = new Date(dt + 'T00:00:00'); return [shortDays[o.getDay()] + ' ' + o.getDate(), shortMonths[o.getMonth()]]; });
+            mainChart.data.datasets[0].data = hData;
+            mainChart.data.datasets[0].backgroundColor = timelineDates.map(dt => { const d = new Date(dt + 'T00:00:00').getDay(); return (d==0||d==6) ? '#E50914' : '#FFF'; });
+            mainChart.data.datasets[1].data = weeklySumLine;
+            mainChart.update();
+        }
+
+        // Chart 2: Impacto Serie (Sincronizado)
+        if (seriesChart) {
+            const sortedSeries = Object.entries(seriesTotal).sort((a,b) => b[1] - a[1]);
+            seriesChart.data.labels = sortedSeries.map(x => x[0]);
+            seriesChart.data.datasets[0].data = sortedSeries.map(x => x[1].toFixed(1));
+            seriesChart.update();
+        }
+
+        // Chart 3 & 4
+        if (avgVsWorkChart) { avgVsWorkChart.data.datasets[0].data = [40, globalWeeklyAvg]; avgVsWorkChart.update(); }
+
+        const bLabels = []; const bData = []; let dPtr = new Date(dStart);
+        while (dPtr <= dEnd) {
+            let sum = 0; let label = fmt(dPtr).split('-').reverse().slice(0,2).join('/');
+            bLabels.push(`Sem. ${label}`);
+            for(let j=0; j<7; j++) { if (dPtr > dEnd) break; const e = masterData.find(x => x.d === fmt(dPtr)); sum += e ? e.h : 0; dPtr.setDate(dPtr.getDate() + 1); }
+            bData.push(sum.toFixed(1));
+        }
+        if (balanceChart) { balanceChart.data.labels = bLabels; balanceChart.data.datasets[0].data = bData; balanceChart.update(); }
+    }
+
+    const insideLabelPlugin = {
+        id: 'insideLabel',
+        afterDatasetsDraw(chart) {
+            if (chart.canvas.id !== 'seriesChart') return;
+            const { ctx, data } = chart; ctx.save(); ctx.font = 'bold 10px sans-serif'; ctx.fillStyle = '#FFF'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            chart.getDatasetMeta(0).data.forEach((bar, i) => { 
+                const val = data.datasets[0].data[i];
+                if(val > 0) ctx.fillText(data.labels[i].toUpperCase() + ' ('+val+'H)', bar.x - bar.width + 5, bar.y); 
+            }); ctx.restore();
+        }
+    };
+
+    window.onload = () => {
+        const today = new Date('2026-04-06T00:00:00'); 
+        const past = new Date(today); past.setDate(today.getDate() - 30);
+        document.getElementById('end').value = fmt(today); 
+        document.getElementById('start').value = fmt(past);
+        Chart.defaults.color = '#FFF';
+
+        mainChart = new Chart(document.getElementById('mainChart').getContext('2d'), {
+            data: { labels: [], datasets: [{ type: 'bar', data: [], yAxisID: 'y', order: 2 }, { type: 'line', data: [], yAxisID: 'y1', borderColor: '#D4AF37', borderWidth: 3, pointRadius: 0, tension: 0.4, order: 1 }] },
+            options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { grid: { display: false } }, y: { min: 0, max: 12, ticks: { stepSize: 3, callback: v => v + 'h' }, grid: { color: '#222' } }, y1: { position: 'right', min: 0, max: 84, ticks: { color: '#D4AF37' }, grid: { display: false } } }, plugins: { legend: { display: false } } }
+        });
+
+        seriesChart = new Chart(document.getElementById('seriesChart').getContext('2d'), {
+            type: 'bar', plugins: [insideLabelPlugin],
+            data: { labels: [], datasets: [{ data: [], backgroundColor: (ctx) => ctx.raw > 50 ? '#E50914' : '#444', borderRadius: 4 }] },
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { ticks: { display: false } } } }
+        });
+
+        balanceChart = new Chart(document.getElementById('balanceChart').getContext('2d'), {
+            plugins: [targetLinePlugin], type: 'bar',
+            data: { labels: [], datasets: [{ label: 'Series', data: [], backgroundColor: '#E50914', borderRadius: 3 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, suggestedMax: 60, grid: { color: '#111' } } } }
+        });
+
+        avgVsWorkChart = new Chart(document.getElementById('avgVsWorkChart').getContext('2d'), {
+            plugins: [targetLinePlugin], type: 'bar',
+            data: { labels: ['TRABAJO', 'SERIES'], datasets: [{ data: [40, 0], backgroundColor: ['#333', '#E50914'], borderRadius: 4 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, suggestedMax: 60, grid: { color: '#111' }, ticks: { callback: v => v + 'h' } } } }
+        });
+
+        document.getElementById('start').addEventListener('change', updateDashboard);
+        document.getElementById('end').addEventListener('change', updateDashboard);
+        updateDashboard();
+    };
+
+    function generatePDF() { html2pdf().from(document.getElementById('dashboard-content')).set({ margin: 0, filename: 'AUDITORIA_SINCRO.pdf', html2canvas: { scale: 2, backgroundColor: '#000' }, jsPDF: { format: 'a4', orientation: 'portrait' } }).save(); }
+</script>
+</body>
+</html>
