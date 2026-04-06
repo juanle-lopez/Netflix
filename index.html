@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Netflix Audit Pro | 2026 Full Focus</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        :root { --n-red: #E50914; --bg: #000; --card: #0a0a0a; --border: #252525; --text: #fff; --yellow: #D4AF37; --muted: #888; }
+        body.light-mode { --bg: #f5f5f5; --card: #ffffff; --border: #dcdcdc; --text: #141414; --muted: #444; }
+        body.light-mode input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.8); }
+        * { box-sizing: border-box; transition: background 0.2s, color 0.2s; }
+        body, html { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; min-height: 100vh; }
+        .container { display: flex; flex-direction: column; padding: 15px; gap: 15px; width: 100%; }
+        @media (min-width: 1024px) {
+            body { height: 100vh; overflow: hidden; }
+            .container { height: 100vh; padding: 20px; }
+            .main-grid { display: grid; grid-template-columns: 1fr 340px; gap: 20px; flex: 1; min-height: 0; }
+            .charts-left { display: grid; grid-template-rows: 1.2fr 1fr; gap: 15px; min-height: 0; }
+            .charts-bottom-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; min-height: 0; }
+        }
+        @media (max-width: 1023px) {
+            .metrics-grid { grid-template-columns: 1fr 1fr !important; }
+            .main-grid { display: flex; flex-direction: column; gap: 15px; }
+            .metric-card .val { font-size: 1.6rem !important; }
+            header { flex-direction: column; gap: 10px; text-align: center; }
+        }
+        header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 15px; }
+        .logo { color: var(--n-red); font-weight: 900; font-size: 1.6rem; letter-spacing: -1.5px; }
+        .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
+        .theme-toggle { background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 20px; cursor: pointer; font-size: 0.7rem; font-weight: bold; text-transform: uppercase; }
+        input[type="date"] { background: var(--card); border: 1px solid var(--yellow); color: var(--text); padding: 8px; border-radius: 4px; color-scheme: dark; font-size: 0.8rem; }
+        body.light-mode input[type="date"] { color-scheme: light; }
+        .btn-pdf { background: var(--n-red); color: #fff; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: 900; font-size: 0.7rem; }
+        .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
+        .metric-card { background: var(--card); border: 1px solid var(--border); padding: 15px; border-radius: 8px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .metric-card h4 { margin: 0; font-size: 0.65rem; color: var(--muted); text-transform: uppercase; }
+        .metric-card .val { font-size: 2.2rem; font-weight: 900; display: block; margin-top: 5px; }
+        .sub-crit { font-size: 0.7rem; color: var(--yellow); font-weight: 800; }
+        .chart-box { background: var(--card); border: 1px solid var(--border); padding: 15px; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+        .chart-box h2 { font-size: 0.75rem; margin: 0 0 10px 0; color: var(--text); text-transform: uppercase; border-left: 3px solid var(--n-red); padding-left: 8px; }
+        .canvas-container { flex: 1; position: relative; min-height: 200px; width: 100%; }
+        .top-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        .top-table td { padding: 8px 0; border-bottom: 1px solid var(--border); }
+        .hours-label { text-align: right; font-weight: 900; color: var(--n-red); font-size: 1rem; }
+    </style>
+</head>
+<body>
+
+<div class="container" id="dashboard-content">
+    <header>
+        <div class="logo">NETFLIX AUDIT PRO</div>
+        <div class="toolbar no-print">
+            <button class="theme-toggle" onclick="toggleTheme()" id="themeBtn">Modo Claro</button>
+            <input type="date" id="start">
+            <input type="date" id="end">
+            <button class="btn-pdf" onclick="generatePDF()">PDF</button>
+        </div>
+    </header>
+
+    <div class="metrics-grid">
+        <div class="metric-card"><h4>Media Diaria</h4><span class="val" id="m-daily">0.0h</span></div>
+        <div class="metric-card"><h4>Media Semanal</h4><span class="val" id="m-weekly">0.0h</span></div>
+        <div class="metric-card"><h4>Total Periodo</h4><span class="val" id="m-total">0.0h</span></div>
+        <div class="metric-card"><h4>Días Críticos</h4><span class="val" id="m-crit" style="color:var(--n-red)">0</span><span class="sub-crit">> 5 HORAS</span></div>
+    </div>
+
+    <div class="main-grid">
+        <div class="charts-left">
+            <div class="chart-box">
+                <h2>Cronología de Visualización (H/Día)</h2>
+                <div class="canvas-container"><canvas id="mainChart"></canvas></div>
+            </div>
+            <div class="charts-bottom-row">
+                <div class="chart-box"><h2>Impacto Serie</h2><div class="canvas-container"><canvas id="seriesChart"></canvas></div></div>
+                <div class="chart-box"><h2>Balance Semanal (H)</h2><div class="canvas-container"><canvas id="balanceChart"></canvas></div></div>
+                <div class="chart-box"><h2>Media vs Jornada 40h</h2><div class="canvas-container"><canvas id="avgVsWorkChart"></canvas></div></div>
+            </div>
+        </div>
+        <aside class="chart-box" style="overflow-y: auto;">
+            <h2>Top 15 Récords del Periodo</h2>
+            <table class="top-table" id="records-table"></table>
+        </aside>
+    </div>
+</div>
+
+<script>
+    let isLight = false;
+    let charts = {};
+    const shortMonthsNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+    // DATOS AUDITADOS 2026 (ENERO A ABRIL)
+    const masterData = [{"d":"2026-01-04","h":0.72,"s":{"He's Just Not That Into You":0.72}},{"d":"2026-01-10","h":3.58,"s":{"The Order":0.72,"Wednesday":2.86}},{"d":"2026-01-11","h":5.01,"s":{"The Order":5.01}},{"d":"2026-02-01","h":6.44,"s":{"The Rookie":6.44}},{"d":"2026-02-02","h":8.59,"s":{"The Rookie":8.59}},{"d":"2026-02-03","h":5.73,"s":{"The Rookie":5.73}},{"d":"2026-02-04","h":9.31,"s":{"The Rookie":9.31}},{"d":"2026-02-05","h":7.16,"s":{"The Rookie":7.16}},{"d":"2026-02-06","h":7.16,"s":{"The Rookie":7.16}},{"d":"2026-02-07","h":13.6,"s":{"The Rookie":13.6}},{"d":"2026-02-08","h":12.17,"s":{"The Rookie":12.17}},{"d":"2026-02-09","h":7.16,"s":{"The Rookie":7.16}},{"d":"2026-02-10","h":1.43,"s":{"Sullivan's Crossing":1.43}},{"d":"2026-02-17","h":0.72,"s":{"S.W.A.T.":0.72}},{"d":"2026-02-22","h":3.58,"s":{"The Night Agent":3.58}},{"d":"2026-02-23","h":5.01,"s":{"The Night Agent":5.01}},{"d":"2026-02-24","h":1.43,"s":{"Love Life":0.72,"The Night Agent":0.72}},{"d":"2026-02-25","h":5.73,"s":{"The Night Agent":5.73}},{"d":"2026-02-27","h":5.01,"s":{"The Vampire Diaries":5.01}},{"d":"2026-02-28","h":13.6,"s":{"The Vampire Diaries":13.6}},{"d":"2026-03-01","h":5.73,"s":{"The Vampire Diaries":5.73}},{"d":"2026-03-03","h":3.58,"s":{"The Rookie":3.58}},{"d":"2026-03-04","h":6.44,"s":{"The Rookie":6.44}},{"d":"2026-03-05","h":2.86,"s":{"The Rookie":2.86}},{"d":"2026-03-06","h":4.3,"s":{"The Vampire Diaries":4.3}},{"d":"2026-03-07","h":9.31,"s":{"The Vampire Diaries":9.31}},{"d":"2026-03-08","h":5.01,"s":{"The Vampire Diaries":5.01}},{"d":"2026-03-09","h":5.73,"s":{"The Vampire Diaries":5.73}},{"d":"2026-03-10","h":4.3,"s":{"The Vampire Diaries":4.3}},{"d":"2026-03-11","h":5.01,"s":{"The Night Agent":2.15,"The Vampire Diaries":2.86}},{"d":"2026-03-12","h":1.43,"s":{"Virgin River":1.43}},{"d":"2026-03-13","h":5.73,"s":{"Virgin River":5.73}},{"d":"2026-03-14","h":3.58,"s":{"The Night Agent":3.58}},{"d":"2026-03-15","h":0.72,"s":{"A Perfect Story":0.72}},{"d":"2026-03-18","h":8.59,"s":{"Designated Survivor":5.73,"The Mentalist":1.43,"The Vampire Diaries":1.43}},{"d":"2026-03-19","h":0.72,"s":{"The Mentalist":0.72}},{"d":"2026-03-22","h":16.47,"s":{"The Mentalist":15.75,"The Vampire Diaries":0.72}},{"d":"2026-03-23","h":3.58,"s":{"The Mentalist":3.58}},{"d":"2026-03-24","h":12.17,"s":{"The Mentalist":12.17}},{"d":"2026-03-25","h":5.01,"s":{"The Mentalist":5.01}},{"d":"2026-03-26","h":10.74,"s":{"The Mentalist":10.74}},{"d":"2026-03-27","h":6.44,"s":{"The Mentalist":6.44}},{"d":"2026-03-28","h":7.88,"s":{"The Mentalist":7.88}},{"d":"2026-03-29","h":14.32,"s":{"The Mentalist":14.32}},{"d":"2026-03-30","h":0.72,"s":{"The Mentalist":0.72}},{"d":"2026-03-31","h":2.86,"s":{"The Mentalist":2.86}},{"d":"2026-04-01","h":5.01,"s":{"Girlboss":1.43,"The Mentalist":3.58}},{"d":"2026-04-02","h":5.73,"s":{"Girlboss":0.72,"The Mentalist":5.01}},{"d":"2026-04-03","h":8.59,"s":{"The Mentalist":8.59}},{"d":"2026-04-04","h":5.01,"s":{"The Mentalist":5.01}},{"d":"2026-04-05","h":5.01,"s":{"Girlboss":0.72,"The Mentalist":4.3}}];
+
+    function fmt(date) { const d = new Date(date); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+
+    // PLUGIN PARA NOMBRES Y HORAS DENTRO DE LAS BARRAS
+    const insideLabelPlugin = {
+        id: 'insideLabel',
+        afterDatasetsDraw(chart) {
+            if (chart.canvas.id !== 'seriesChart') return;
+            const { ctx, data } = chart; ctx.save();
+            ctx.font = 'bold 11px sans-serif'; ctx.fillStyle = isLight ? '#141414' : '#FFF';
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            chart.getDatasetMeta(0).data.forEach((bar, i) => {
+                const label = data.labels[i]; const val = data.datasets[0].data[i];
+                if (val > 0) ctx.fillText(`${label.toUpperCase()} (${val}H)`, bar.x - bar.width + 5, bar.y);
+            }); ctx.restore();
+        }
+    };
+
+    const targetLinePlugin = {
+        id: 'targetLine',
+        afterDraw(chart) {
+            if (chart.canvas.id !== 'balanceChart' && chart.canvas.id !== 'avgVsWorkChart') return;
+            const { ctx, chartArea: { left, right }, scales: { y } } = chart;
+            const yPos = y.getPixelForValue(40);
+            if (yPos < chart.chartArea.top || yPos > chart.chartArea.bottom) return;
+            const lineCol = isLight ? '#555' : '#D4AF37';
+            ctx.save(); ctx.beginPath(); ctx.setLineDash([6, 4]); ctx.lineWidth = 2; ctx.strokeStyle = lineCol;
+            ctx.moveTo(left, yPos); ctx.lineTo(right, yPos); ctx.stroke();
+            ctx.fillStyle = lineCol; ctx.font = 'bold 10px sans-serif';
+            ctx.fillText('40H REF', left + 5, yPos - 5); ctx.restore();
+        }
+    };
+
+    Chart.register(insideLabelPlugin, targetLinePlugin);
+
+    function toggleTheme() { isLight = !isLight; localStorage.setItem('netflixTheme', isLight ? 'light' : 'dark'); applyTheme(); }
+    function applyTheme() { document.body.classList.toggle('light-mode', isLight); document.getElementById('themeBtn').innerText = isLight ? "Modo Oscuro" : "Modo Claro"; updateDashboard(); }
+
+    function updateDashboard() {
+        const startStr = document.getElementById('start').value;
+        const endStr = document.getElementById('end').value;
+        if(!startStr || !endStr) return;
+
+        const filtered = masterData.filter(i => i.d >= startStr && i.d <= endStr);
+        const dStart = new Date(startStr + 'T00:00:00');
+        const dEnd = new Date(endStr + 'T00:00:00');
+        const days = Math.max(1, Math.round((dEnd - dStart) / 86400000) + 1);
+        
+        let totalH = 0, crit = 0; const sTotal = {};
+        filtered.forEach(i => { totalH += i.h; if (i.h > 5) crit++; for(const [n, v] of Object.entries(i.s)) sTotal[n] = (sTotal[n] || 0) + v; });
+
+        document.getElementById('m-daily').innerText = (totalH / days).toFixed(1) + "h";
+        document.getElementById('m-weekly').innerText = ((totalH / days) * 7).toFixed(1) + "h";
+        document.getElementById('m-total').innerText = totalH.toFixed(1) + "h";
+        document.getElementById('m-crit').innerText = crit;
+
+        const sortedRecords = [...filtered].sort((a,b) => b.h - a.h).slice(0, 15);
+        document.getElementById('records-table').innerHTML = sortedRecords.map(i => {
+            const o = new Date(i.d+'T00:00:00');
+            return `<tr><td><span style="font-size:0.6rem;color:var(--muted);display:block">${o.getDate()} ${shortMonthsNames[o.getMonth()]}</span></td>
+            <td class="hours-label">${i.h.toFixed(1)}h</td></tr>`;
+        }).join('');
+
+        initCharts(startStr, endStr, filtered, sTotal, totalH, days);
+    }
+
+    function initCharts(startStr, endStr, filtered, sTotal, totalH, days) {
+        const textColor = isLight ? '#141414' : '#FFF';
+        const gridColor = isLight ? '#ddd' : '#222';
+        const barColor = isLight ? '#333' : '#FFF';
+
+        if (charts.main) charts.main.destroy();
+        const tDates = []; let cur = new Date(startStr + 'T00:00:00'); const endD = new Date(endStr + 'T00:00:00');
+        while (cur <= endD) { tDates.push(fmt(cur)); cur.setDate(cur.getDate() + 1); }
+        const hData = tDates.map(dt => { const e = masterData.find(x => x.d === dt); return e ? e.h : 0; });
+        const wSum = hData.map((_, i, arr) => { const s = Math.max(0, i-3); const e = Math.min(arr.length, i+4); const sub = arr.slice(s, e); return (sub.reduce((a, b) => a + b, 0) / sub.length) * 7; });
+
+        charts.main = new Chart(document.getElementById('mainChart'), {
+            data: { labels: tDates.map(dt => { const o = new Date(dt+'T00:00:00'); return [o.getDate(), shortMonthsNames[o.getMonth()]]; }),
+                datasets: [{ type: 'bar', data: hData, backgroundColor: tDates.map(dt => (new Date(dt+'T00:00:00').getDay() === 0 || new Date(dt+'T00:00:00').getDay() === 6) ? '#E50914' : barColor), yAxisID: 'y' },
+                { type: 'line', data: wSum, borderColor: '#D4AF37', borderWidth: 3, pointRadius: 0, tension: 0.4, yAxisID: 'y1' }]},
+            options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: textColor, font: { size: 9 } }, grid: { display: false } }, y: { ticks: { color: textColor }, grid: { color: gridColor }, min: 0, suggestedMax: 18 }, y1: { position: 'right', ticks: { color: '#D4AF37' }, grid: { display: false }, min: 0, max: 100 } }, plugins: { legend: { display: false } } }
+        });
+
+        if (charts.series) charts.series.destroy();
+        const sortedS = Object.entries(sTotal).sort((a,b) => b[1] - a[1]).slice(0,10);
+        charts.series = new Chart(document.getElementById('seriesChart'), {
+            type: 'bar', data: { labels: sortedS.map(x => x[0]), datasets: [{ data: sortedS.map(x => x[1].toFixed(1)), backgroundColor: '#E50914' }] },
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, scales: { x: { display: false }, y: { ticks: { display: false } } }, plugins: { legend: { display: false } } }
+        });
+
+        if (charts.balance) charts.balance.destroy();
+        const bL = []; const bD = []; let bP = new Date(startStr + 'T00:00:00');
+        const diff = bP.getDay() === 0 ? 6 : bP.getDay() - 1; bP.setDate(bP.getDate() - diff);
+        while (bP <= endD) { let s = 0; let m = new Date(bP); let n = new Date(bP); n.setDate(n.getDate() + 6);
+            for(let j=0; j<7; j++) { const e = masterData.find(x => x.d === fmt(bP)); s += e ? e.h : 0; bP.setDate(bP.getDate() + 1); }
+            bL.push(`${m.getDate()} - ${n.getDate()} ${shortMonthsNames[m.getMonth()]}`); bD.push(s.toFixed(1)); }
+        charts.balance = new Chart(document.getElementById('balanceChart'), {
+            type: 'bar', data: { labels: bL, datasets: [{ data: bD, backgroundColor: '#E50914' }] },
+            options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: textColor, font: { size: 9 } }, grid: { display: false } }, y: { ticks: { color: textColor }, grid: { color: gridColor }, beginAtZero: true, suggestedMax: 60 } }, plugins: { legend: { display: false } } }
+        });
+
+        if (charts.work) charts.work.destroy();
+        charts.work = new Chart(document.getElementById('avgVsWorkChart'), {
+            type: 'bar', data: { labels: ['40H TRABAJO', 'TU MEDIA'], datasets: [{ data: [40, (totalH / days * 7).toFixed(1)], backgroundColor: ['#333', '#E50914'] }] },
+            options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { color: textColor, font: { weight: 'bold' } }, grid: { display: false } }, y: { ticks: { color: textColor }, grid: { color: gridColor }, beginAtZero: true, suggestedMax: 60 } }, plugins: { legend: { display: false } } }
+        });
+    }
+
+    window.onload = () => {
+        const savedTheme = localStorage.getItem('netflixTheme'); if (savedTheme === 'light') isLight = true;
+        
+        // FORZAR RANGO: ÚLTIMOS 30 DÍAS REALES DEL HISTORIAL 2026
+        const lastDate = new Date("2026-04-05T00:00:00");
+        const thirtyAgo = new Date("2026-03-06T00:00:00");
+        
+        document.getElementById('end').value = fmt(lastDate);
+        document.getElementById('start').value = fmt(thirtyAgo);
+        
+        applyTheme();
+        document.getElementById('start').addEventListener('change', updateDashboard);
+        document.getElementById('end').addEventListener('change', updateDashboard);
+    };
+
+    function generatePDF() { html2pdf().from(document.getElementById('dashboard-content')).set({ margin: 5, filename: 'AUDITORIA_NETFLIX_2026.pdf', html2canvas: { scale: 2, backgroundColor: isLight ? '#f5f5f5' : '#000' }, jsPDF: { format: 'a4', orientation: 'portrait' } }).save(); }
+</script>
+</body>
+</html>
